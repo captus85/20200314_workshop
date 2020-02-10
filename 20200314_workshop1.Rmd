@@ -1,0 +1,123 @@
+---
+title: "Workshop day2: Why use R?"
+author: "Gyu Han Oh"
+data: "2020-03-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Preparation
+
+```{r}
+library(tidyverse)
+library(tableone)
+library(moonBook)
+library(stats)
+library(purrr)
+library(broom)
+```
+
+
+
+# 2. SPSS vs R
+
+## load data
+
+```{r message=FALSE}
+demo_df <- read_csv("2018_army_demo_df.csv")
+army_df <- read_csv("2018_army_df.csv")
+ASRS.test <- read_csv("ASRS_test.csv")
+PHQ9.test <- read_csv("PHQ9_test.csv")
+PHQ15.test <- read_csv("PHQ15_test.csv")
+ISI.test <- read_csv("ISI_test.csv")
+DEMO <- read_csv("demo.csv")
+```
+
+## 군역학 데이터프레임 구조 살펴보기
+
+```{r, eval = FALSE}
+str(demo_df)
+glimpse(demo_df)
+
+head(demo_df) # n = 20
+tail(demo_df)
+```
+
+## demographic table 만들기
+
+### method 1
+
+```{r}
+army_vars <- c("income", "religion", 
+               "bmi", "bmi.f", "age", "age.f",
+               "edu", "edu.f", "parent.f", "religion.f")
+
+army_factor <- c("income", "religion", 
+                 "bmi.f", "age.f", "edu.f", "parent.f", "religion.f")
+
+CreateTableOne(vars = army_vars, strata = "ASRS.positive.f",
+               factorVars = army_factor, data = demo_df)
+```
+
+### method 2
+```{r warning=FALSE}
+
+mytable(ASRS.positive.f ~ income + religion + bmi +bmi.f + age + age.f +
+                          edu + edu.f + parent.f + religion.f, data = demo_df)
+```
+
+
+## 군역학 univariate analysis
+
+### method 1
+```{r}
+complete.df <- reduce(list(DEMO, PHQ9.test, PHQ15.test, ISI.test, ASRS.test),
+                      left_join, by = c("ID", "NAAF")) %>%
+  dplyr::select(NAAF, edu.f, bmi.f, PHQ9_total, PHQ15_total,
+         ISI_total, PHQ9.positive.f, PHQ15.positive.f, ISI.positive.f, ASRS.positive.f)
+
+models <- list( 
+  grade_glm = glm(ASRS.positive.f ~ edu.f, family = "binomial", data = complete.df),
+  bmi_glm = glm(ASRS.positive.f ~ bmi.f, family = "binomial", data = complete.df),
+  PHQ9_glm = glm(ASRS.positive.f ~ PHQ9_total, family = "binomial", data = complete.df),
+  PHQ15_glm = glm(ASRS.positive.f ~ PHQ15_total, family = "binomial", data = complete.df),
+  ISI_glm = glm(ASRS.positive.f ~ ISI_total, family = "binomial", data = complete.df))
+
+results <- do.call("rbind", lapply(names(models), function(n) cbind(model=n, tidy(models[[n]])) )) %>%  gather(stat, value, -model, -term)
+
+tidy(models[[1]])
+
+
+results %>% filter(stat=="estimate") %>% 
+  dplyr::select(model, term, value) %>%
+  spread(term, value)
+
+results %>% filter(stat=="p.value") %>%
+  mutate(p=format.pval(value)) %>%
+  dplyr::select(model, term, p) %>%
+  spread(term, p)
+```
+
+### method 2
+```{r}
+responses <- grep("ASRS.positive.f", names(complete.df), value=T) ## response variable
+predictor <- colnames(complete.df)[2:10]
+models <- lapply(predictor, function(x) as.formula(paste(responses, paste(x),
+                                                         sep="~")))
+
+fits <- lapply(models, glm, family = "binomial", na.action = na.omit, data = complete.df)
+
+tidy(fits[[1]])
+```
+
+
+
+
+# 2. R 단점
+
+### 높은 진입장벽
+### 데이터 전처리 과정에 많은 시간이 필요 (전처리 80%, 분석 7%, 시각화 13%)
+### 수정, 오류 (variable name, 대소문자 구분, 여러 패키지에서 동일한 함수명 사용 등)
